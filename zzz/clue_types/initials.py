@@ -68,10 +68,10 @@ for datapoint in data:
     clue, nondef, defn, ans, sz = load.unwrap_data(datapoint)
     if not clue or not defn or not ans:
         continue
-    initials, indicator = find_initials(nondef, ans)
-    if initials:
+    inits, indicator = find_initials(nondef, ans)
+    if inits:
         print("clue:", clue)
         print("ans:", ans)
-        print("initials:", initials)
+        print("initials:", inits)
         print("indicator:", indicator)
         print()

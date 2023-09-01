@@ -2,7 +2,7 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 
-use_clues = True
+use_clues = False
 
 if use_clues:
     with open('clues.pkl', 'rb') as f:

@@ -82,6 +82,12 @@ def unwrap_data(data, print_err=False):
         return None, None, None, None, None
     return clue, nondef, defn, ans, length
 
+def load_words():
+    with open('words.txt', 'r') as f:
+        word_list = f.read().splitlines()
+    words = set(word_list)
+    return words
+
 if __name__ == "__main__":
     data = load_data()
     print(len(data))

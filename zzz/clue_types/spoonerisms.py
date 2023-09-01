@@ -29,36 +29,26 @@ import load
 import spacy
 
 nlp = spacy.load("en_core_web_lg")
-anagrams = [
-    nlp("anagram"),
-    nlp("scramble"),
-    nlp("mixed"),
-    nlp("rearrange"),
-    nlp("shuffle"),
-    nlp("wacky"),
-    nlp("jumble"),
-    nlp("disorder"),
-    nlp("disarrange")
+spooners = [
+    nlp("spooner"),
+    nlp("spoon")
 ] 
 
 data = load.load_data()
 
-def find_anagram(clue, ans):
+def find_spoonerism(clue, ans):
     words = clue.split()
-    ans_decomp = list(ans)
-    ans_decomp.sort()
-    for i in range(len(words)):
-        word_decomp = list(words[i])
-        word_decomp.sort()
-        if word_decomp == ans_decomp:
-            indicator = (-1e18, '')
-            other = words[:i] + words[i+1:]
-            for j in range(len(other)):
-                for k in range(j, len(other)):
-                    joint = ' '.join(other[j:k+1])
-                    joint_nlp = nlp(joint)
-                    indicator = max(indicator, (sum([joint_nlp.similarity(r) for r in anagrams]), joint))
-            return f"{words[i]} -> {ans}", indicator
+    for idx0 in range(len(words)):
+        for idx1 in range(idx0, len(words)):
+            if len(words[idx0]) == 1 or len(words[idx1]) == 1:
+                continue
+            if words[idx1][0] + words[idx0][1:] + words[idx0][0] + words[idx1][1:] == ans:
+                indicator = (-1e18, '')
+                other = words[:idx0] + words[idx0+1:idx1] + words[idx1+1:]
+                for j in range(len(other)):
+                    word_nlp = nlp(other[j])
+                    indicator = max(indicator, (sum([word_nlp.similarity(r) for r in spooners]), other[j]))
+                return ans, indicator
     return None, None
 
 cnt, idx = 0, 0
@@ -66,10 +56,11 @@ for datapoint in data:
     clue, nondef, defn, ans, sz = load.unwrap_data(datapoint)
     if not clue or not defn or not ans:
         continue
-    anas, indicator = find_anagram(clue, ans)
+    anas, indicator = find_spoonerism(clue, ans)
+    # isis appears a lot, very few examples of spoonerisms
     if anas:
         print("clue:", clue)
         print("ans:", ans)
-        print("anagram:", anas)
+        print("spoonerism:", anas)
         print("indicator:", indicator)
         print()
