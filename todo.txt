@@ -1,7 +1,9 @@
 8/18
 X prune dictionary to only include answers appearing in prev cryptics
 X include how many words we're checking
-mean reciprocal rank of rank of answers in lists
+X mean reciprocal rank of rank of answers in lists
 X homophones aren't too important
 chaining rule types can depend (ie anagrams don't but letter banks may be?, don't often go beyond length 2)
 
+9/1
+X benchmark should take in method and spit out ranked list of answers

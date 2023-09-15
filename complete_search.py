@@ -200,6 +200,9 @@ for datapoint in data:
     answer_set.add(ans)
 print('TOTAL SIZE OF ANSWER SET', len(answer_set))
 
+all_data_idxs = []
+all_data_scores = []
+
 for datapoint in data:
     clue, nondefn, defn, ans, sz = load.unwrap_data(datapoint)
     if not clue or not defn or not ans:
@@ -215,18 +218,45 @@ for datapoint in data:
     # continue
     possible_defns = get_possible_defns(clue)
     possible_ans, scores = models.answer_clues(dpr, possible_defns, max_answers, output_strings=True)
+    zipped = []
     for i in range(len(possible_ans)):
-        possible_ans[i] = [ansn.lower().replace(' ', '') for ansn in possible_ans[i] if len(ansn) - ansn.count(' ') == len(ans)]
-        possible_ans[i] = [ansn for ansn in possible_ans[i] if ansn in answer_set]
+        zipped += [[]]
+        for j in range(len(possible_ans[i])):
+            zipped[-1] += [(possible_ans[i][j], scores[i][j])]
+    # for i in range(len(possible_ans)):
+    #     possible_ans[i] = [ansn.lower().replace(' ', '') for ansn in possible_ans[i] if len(ansn) - ansn.count(' ') == len(ans)]
+    #     possible_ans[i] = [ansn for ansn in possible_ans[i] if ansn in answer_set]
+    for i in range(len(zipped)):
+        zipped[i] = [(ansn.lower().replace(' ', ''), score) for ansn, score in zipped[i] if len(ansn) - ansn.count(' ') == len(ans)]
+        zipped[i] = [(ansn, score) for ansn, score in zipped[i] if ansn in answer_set]
+    possible_ans, scores = [], []
+    for i in range(len(zipped)):
+        possible_ans += [[]]
+        scores += [[]]
+        for ansn, score in zipped[i]:
+            possible_ans[-1] += [ansn]
+            scores[-1] += [score]
     ok = False # all possible_ans[i] have same words now, any way to use this?
+    ans_idxs = [1000000] * len(possible_ans)
+    ans_scores = [0.000001] * len(possible_ans)
     for i in range(len(possible_ans)):
         if ans in possible_ans[i]:
             ok = True
-            print('ANSWER IN POSSIBLE ANSWERS IN LIST', i, possible_defns[i])
+            ans_idxs[i] = possible_ans[i].index(ans) + 1
+            ans_scores[i] = scores[i][ans_idxs[i]]
+            all_data_idxs += [ans_idxs[i]]
+            all_data_scores += [ans_scores[i]]
+            # print('ANSWER IN POSSIBLE ANSWERS IN LIST', i, possible_defns[i], 'AT', ans_idxs[i], 'WITH SCORE', ans_scores[i])
     if not ok:
         print('ANSWER NOT IN POSSIBLE ANSWERS, SKIPPING')
         print('=' * 80)
         continue
+    print('AVG ans_idxs:', np.mean(ans_idxs))
+    print('MIN ans_idxs:', np.min(ans_idxs))
+    print('AVG RECIPROCAL ans_idxs:', 1 / np.mean(1 / (np.array(ans_idxs))))
+    print('AVG ans_scores:', np.mean(ans_scores))
+    print('MAX ans_scores:', np.max(ans_scores))
+    print('AVG RECIPROCAL ans_scores:', 1 / np.mean(1 / np.array(ans_scores)))
     already_found = {
         'alternating': [],
         'anagram': [],
