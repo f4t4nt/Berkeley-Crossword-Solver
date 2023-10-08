@@ -35,60 +35,6 @@ import itertools
 dpr = models.setup_closedbook(0)
 cw_dict = load.load_words(only_ans=True)
 
-# # a general type of class with attributes type and bank
-# class Operator:
-#     def __init__(self, indic=None):
-#         self.indic = indic
-    
-#     # each element in bank is
-#     # - word
-#     # - set of words
-#     # - operator (resolves to word or set of words)
-#     # resolves all operators in bank
-    
-#     # bank0 = original bank (with operators)
-#     # bank1 = bank with operators resolved
-#     # bank2 = bank with only words
-#     def reduce(self, bank0, in_dict=True):
-#         # for i in range(len(bank0)):
-#         #     if isinstance(bank0[i], Operator):
-#         #         bank0[i] = bank0[i](bank0[i].bank, in_dict)
-#         # ^ junk, can probably delete
-#         return self.clean(bank0)
-    
-#     def clean(self, bank1):
-#         bank2 = []
-#         for i in range(len(bank1)):
-#             if isinstance(bank1[i], list):
-#                 bank2.append([re.sub(r'[^\w\s]', '', w).lower() for w in bank1[i]])
-#             else:
-#                 bank2.append(re.sub(r'[^\w\s]', '', bank1[i]).lower())
-#         return bank2
-    
-#     # yields next bank with only words
-#     def get_next(self, bank0, i=0, root=True):
-#         if i >= len(bank0):
-#             yield []
-#         else:
-#             if isinstance(bank0[i], list):
-#                 for word in bank0[i]:
-#                     for next_bank in self.get_next(bank0, i+1, False):
-#                         yield [word] + next_bank
-#             else:
-#                 for next_bank in self.get_next(bank0, i+1, False):
-#                     yield [bank0[i]] + next_bank
-            
-#     # yields random bank with only words
-#     def get_rand(self, bank0):
-#         while True:
-#             bank1 = []
-#             for i in range(len(bank0)):
-#                 if isinstance(bank0[i], list):
-#                     bank1.append(random.choice(bank0[i]))
-#                 else:
-#                     bank1.append(bank0[i])
-#             yield bank1
-
 def clean(bank1):
     bank2 = []
     for i in range(len(bank1)):
@@ -122,24 +68,12 @@ def rand_bank(bank0):
                 bank1.append(bank0[i])
         yield bank1
 
-# class Alternation(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)    
-    
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             merged = ''.join(bank2)
-#             for i in range(len(merged)):
-#                 rv = ""
-#                 for j in range(i, len(merged), 2):
-#                     rv += merged[j]
-#                     if not in_dict or rv in cw_dict:
-#                         output.add(rv)
-#         return list(output)
+################################################
+# if ans is None, returns all possible answers #
+# else return probability                      #
+################################################
 
-def Alternation(bank0, indic=None, in_dict=True):
+def Alternation(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
@@ -150,29 +84,15 @@ def Alternation(bank0, indic=None, in_dict=True):
                 rv += merged[j]
                 if not in_dict or rv in cw_dict:
                     output.add(rv)
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
 
-# class Anagram(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-    
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             merged = ''.join(bank2)
-#             merged = sorted(merged)
-#             if in_dict:
-#                 for word in cw_dict:
-#                     word = re.sub(r'[^\w\s]', '', word).lower().replace(" ", "")
-#                     if len(word) == len(merged) and sorted(word) == merged:
-#                         output.add(word)
-#             else:
-#                 for perm in itertools.permutations(merged): # O(n!), fix later
-#                     output.add(''.join(perm))
-#         return list(output)
-
-def Anagram(bank0, indic=None, in_dict=True):
+def Anagram(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
@@ -186,111 +106,65 @@ def Anagram(bank0, indic=None, in_dict=True):
         else:
             for perm in itertools.permutations(merged): # O(n!), fix later
                 output.add(''.join(perm))
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
 
-# class Concatenation(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             merged = ''.join(bank2)
-#             if not in_dict or merged in cw_dict:
-#                 output.add(merged)
-#         return list(output)
-
-def Concatenation(bank0, indic=None, in_dict=True):
+def Concatenation(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
         merged = ''.join(bank2)
         if not in_dict or merged in cw_dict:
             output.add(merged)
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
     
-# class Container(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         return []
+def Container(bank0, indic=None, in_dict=True, ans=None):
+    if ans is None:
+        return []
+    else:
+        return 0
 
-def Container(bank0, indic=None, in_dict=True):
-    return []
-
-# class Deletion(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         return []
-
-def Deletion(bank0, indic=None, in_dict=True):
-    return []
+def Deletion(bank0, indic=None, in_dict=True, ans=None):
+    if ans is None:
+        return []
+    else:
+        return 0
     
-# class Hidden(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             merged = ''.join(bank2)
-#             for i in range(len(merged)): # could maybe make sure all words are at least partially included
-#                 for j in range(i+1, len(merged)+1):
-#                     rv = merged[i:j]
-#                     if not in_dict or rv in cw_dict:
-#                         output.add(rv)
-#         return list(output)
-
-def Hidden(bank0, indic=None, in_dict=True):
+def Hidden(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
         merged = ''.join(bank2)
-        for i in range(len(merged)): # could maybe make sure all words are at least partially included
-            for j in range(i+1, len(merged)+1):
+        lo = len(bank2[0])
+        hi = len(merged) - len(bank2[-1])
+        # for i in range(len(merged)): # could maybe make sure all words are at least partially included
+        for i in range(lo):
+            # for j in range(i+1, len(merged)+1):
+            for j in range(min(i, hi)+1, len(merged)+1):
                 rv = merged[i:j]
                 if not in_dict or rv in cw_dict:
                     output.add(rv)
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
     
-# # similar to hidden
-# class Initialism(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             word = ""
-#             for w in bank2:
-#                 word += w[0]
-#             if not in_dict or word in cw_dict:
-#                 output.add(word)
-#         return list(output)
-    
-# class Terminals(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             word = ""
-#             for w in bank2:
-#                 word += w[-1]
-#             if not in_dict or word in cw_dict:
-#                 output.add(word)
-#         return list(output)
-
 # similar to hidden
-def Initialism(bank0, indic=None, in_dict=True):
+def Initialism(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
@@ -299,9 +173,15 @@ def Initialism(bank0, indic=None, in_dict=True):
             word += w[0]
         if not in_dict or word in cw_dict:
             output.add(word)
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
 
-def Terminals(bank0, indic=None, in_dict=True):
+def Terminals(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
@@ -310,43 +190,27 @@ def Terminals(bank0, indic=None, in_dict=True):
             word += w[-1]
         if not in_dict or word in cw_dict:
             output.add(word)
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
 
-# class Homophone(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         return []
+def Homophone(bank0, indic=None, in_dict=True, ans=None):
+    if ans is None:
+        return []
+    else:
+        return 0
 
-def Homophone(bank0, indic=None, in_dict=True):
-    return []
+def Insertion(bank0, indic=None, in_dict=True, ans=None):
+    if ans is None:
+        return []
+    else:
+        return 0
 
-# class Insertion(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         return []
-
-def Insertion(bank0, indic=None, in_dict=True):
-    return []
-
-# class Reversal(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             merged = ''.join(bank2)
-#             merged = merged[::-1]
-#             if not in_dict or merged in cw_dict:
-#                 output.add(merged)
-#         return list(output)
-
-def Reversal(bank0, indic=None, in_dict=True):
+def Reversal(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
     for cnt, bank2 in enumerate(next_bank(bank1)):
@@ -354,39 +218,21 @@ def Reversal(bank0, indic=None, in_dict=True):
         merged = merged[::-1]
         if not in_dict or merged in cw_dict:
             output.add(merged)
-    return list(output)
+    if ans is None:
+        return list(output)
+    else:
+        if ans in output:
+            return 1
+        else:
+            return 0
 
-# class Substitution(Operator):
-#     def __init__(self, indic=None):
-#         super().__init__(indic)
-        
-#     def __call__(self, bank0, in_dict=True, thresh=1000):
-#         bank1 = super().reduce(bank0, in_dict)
-#         output = set()
-#         for cnt, bank2 in enumerate(self.get_next(bank1)):
-#             merged = ' '.join(bank2)
-#             preds, preds_scores = models.answer_clues(dpr, [merged], 999999999, output_strings=True)
-#             preds = preds[0]
-#             preds_scores = preds_scores[0]
-#             cnt = 0
-#             for pred, pred_score in zip(preds, preds_scores):
-#                 pred = re.sub(r'[^\w\s]', '', pred).lower()
-#                 if not in_dict or pred in cw_dict:
-#                     output.add((pred_score, pred))
-#                     cnt += 1
-#                 if cnt >= thresh:
-#                     break
-#         output = list(output)
-#         output.sort(reverse=True)
-#         if len(output) > thresh:
-#             output = output[:thresh]
-#         output = [o[1] for o in output]
-#         return output
+def soft(target, all):
+    return np.exp(target) / np.sum(np.exp(np.array(all)))
 
-def Substitution(bank0, indic=None, in_dict=True, thresh=1000):
+def Substitution(bank0, indic=None, in_dict=True, thresh=1000, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         merged = ' '.join(bank2)
         preds, preds_scores = models.answer_clues(dpr, [merged], 999999999, output_strings=True)
         preds = preds[0]
@@ -401,10 +247,17 @@ def Substitution(bank0, indic=None, in_dict=True, thresh=1000):
                 break
     output = list(output)
     output.sort(reverse=True)
-    if len(output) > thresh:
-        output = output[:thresh]
-    output = [o[1] for o in output]
-    return output
+    if ans is None:
+        output = [o[1] for o in output]
+        return output
+    else:
+        target = -1e9
+        for pred_score, pred in output:
+            if pred == ans:
+                target = pred_score
+                break
+        all = [o[0] for o in output]
+        return soft(target, all)
 
 # yields random tree of operators
 def rand_op_tree(operators):
@@ -461,58 +314,26 @@ def rand_assign(bank, root, tree):
 # one -(two)-> oneone -(bottle)-> neon
 
 if __name__ == "__main__":
-    # # test get_next on ["a", ["bc", "de", "ef"], "g", ["hi", "jk"], "l", "m", ["no", "pq", "rs"]]
-    # op = Operator()
     # bank = ["a", ["bc", "de", "ef"], "g", ["hi", "jk"], "l", "m", ["no", "pq", "rs"]]
-    # for next_bank in op.get_next(bank):
-    #     print(next_bank)
-    
-    # # test alternation on ["Odd", "stuff", "of", "Mr.", "Waugh", "is", "set" "for"] -> "suffragist"
-    # alternation = Alternation()
-    # print(alternation(["Odd", "stuff", "of", "Mr.", "Waugh", "is", "set" "for"]))
-    
-    # # test anagram on ["defeat, faced", "in"] -> "decaffeinated"
-    # anagram = Anagram()
-    # print(anagram(["defeat", "faced", "in"]))
-    
-    # test nested on [["adaeafaeaaata"], "faced", "in"] -> "decaffeinated"
-    # alternation = Alternation()
-    # anagram = Anagram()
-    # print(anagram([alternation(["adaeafaeaaata"]), "faced", "in"]))
-    
-    # # test concatenation and substitution on [["Outlaw"], ["leader"]] -> "banking"
-    # concatenation = Concatenation()
-    # substitution = Substitution()
-    # print(concatenation([substitution(["Outlaw"]), substitution(["leader"])]))
-    
-    # # test hidden on ["Found", "ermine,", "deer"] -> "undermined""
-    # hidden = Hidden()
-    # print(hidden(["Found", "ermine,", "deer"]))
-    
-    # # test concatenation, substitution, and alternation on [["left"], ["judgeable"]] -> "portugal"
-    # concatenation = Concatenation()
-    # substitution = Substitution()
-    # alternation = Alternation()
-    # print(concatenation([substitution(["left"]), alternation(["judgeable"], in_dict=False)]))
-    
-    bank = ["a", ["bc", "de", "ef"], "g", ["hi", "jk"], "l", "m", ["no", "pq", "rs"]]
-    for cnt, bank2 in enumerate(next_bank(bank)):
-        print(cnt, bank2)
-    print()
-    print(Alternation(["Odd", "stuff", "of", "Mr.", "Waugh", "is", "set" "for"]))
-    print()
-    print(Anagram(["defeat", "faced", "in"]))
-    print()
-    print(Anagram([Alternation(["adaeafaeaaata"]), "faced", "in"]))
-    print()
-    print(Concatenation([Substitution(["Outlaw"]), Substitution(["leader"])]))
-    print()
-    print(Hidden(["Found", "ermine,", "deer"]))
-    print()
-    print(Concatenation([Substitution(["left"]), Alternation(["judgeable"], in_dict=False)]))
-    print()
-    print(Hidden(["circumspect,", "really"]))
-    print()
+    # for cnt, bank2 in enumerate(next_bank(bank)):
+    #     print(cnt, bank2)
+    # print()
+    # print(Alternation(["Odd", "stuff", "of", "Mr.", "Waugh", "is", "set" "for"]))
+    # print()
+    # print(Anagram(["defeat", "faced", "in"]))
+    # print()
+    # print(Anagram([Alternation(["adaeafaeaaata"]), "faced", "in"]))
+    # print()
+    # print(Concatenation([Substitution(["Outlaw"]), Substitution(["leader"])]))
+    # print()
+    # print(Hidden(["Found", "ermine,", "deer"]))
+    # print()
+    # print(Concatenation([Substitution(["left"]), Alternation(["judgeable"], in_dict=False)]))
+    # print()
+    # print(Hidden(["circumspect,"]))
+    # print()
+    # print(Hidden(["circumspect,", "really"]))
+    # print()
     for cnt, (root, tree) in enumerate(rand_op_tree(["anagram", "concat", "alternation", "substitution", "hidden"])):
         print(cnt)
         print_tree(root, tree)
