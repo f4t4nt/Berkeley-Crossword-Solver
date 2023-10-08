@@ -32,17 +32,25 @@ import random
 import re
 import itertools
 
+# input -> answers
+# NOT answer, input -> probability
+
 dpr = models.setup_closedbook(0)
 cw_dict = load.load_words(only_ans=True)
 
-def clean(bank1):
-    bank2 = []
-    for i in range(len(bank1)):
-        if isinstance(bank1[i], list):
-            bank2.append([re.sub(r'[^\w\s]', '', w).lower() for w in bank1[i]])
+# . bank0: original clue
+# v bank1: bank0.split()
+# v bank2: cleaned, no punctuation, lowercase, can have multiple options for each word
+# v bank3: single option for each word
+
+def clean(bank0):
+    bank1 = []
+    for i in range(len(bank0)):
+        if isinstance(bank0[i], list):
+            bank1.append([re.sub(r'[^\w\s]', '', w).lower() for w in bank0[i]])
         else:
-            bank2.append(re.sub(r'[^\w\s]', '', bank1[i]).lower())
-    return bank2
+            bank1.append(re.sub(r'[^\w\s]', '', bank0[i]).lower())
+    return bank1
 
 # yields next bank with only words
 def next_bank(bank1, i=0, root=True):
@@ -76,7 +84,7 @@ def rand_bank(bank0):
 def Alternation(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         merged = ''.join(bank2)
         for i in range(len(merged)):
             rv = ""
@@ -95,7 +103,7 @@ def Alternation(bank0, indic=None, in_dict=True, ans=None):
 def Anagram(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         merged = ''.join(bank2)
         merged = sorted(merged)
         if in_dict:
@@ -117,7 +125,7 @@ def Anagram(bank0, indic=None, in_dict=True, ans=None):
 def Concatenation(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         merged = ''.join(bank2)
         if not in_dict or merged in cw_dict:
             output.add(merged)
@@ -144,7 +152,7 @@ def Deletion(bank0, indic=None, in_dict=True, ans=None):
 def Hidden(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         merged = ''.join(bank2)
         lo = len(bank2[0])
         hi = len(merged) - len(bank2[-1])
@@ -167,7 +175,7 @@ def Hidden(bank0, indic=None, in_dict=True, ans=None):
 def Initialism(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         word = ""
         for w in bank2:
             word += w[0]
@@ -184,7 +192,7 @@ def Initialism(bank0, indic=None, in_dict=True, ans=None):
 def Terminals(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         word = ""
         for w in bank2:
             word += w[-1]
@@ -213,7 +221,7 @@ def Insertion(bank0, indic=None, in_dict=True, ans=None):
 def Reversal(bank0, indic=None, in_dict=True, ans=None):
     bank1 = clean(bank0)
     output = set()
-    for cnt, bank2 in enumerate(next_bank(bank1)):
+    for bank2 in next_bank(bank1):
         merged = ''.join(bank2)
         merged = merged[::-1]
         if not in_dict or merged in cw_dict:
