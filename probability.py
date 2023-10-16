@@ -49,7 +49,13 @@ def check_chars(word, fixed):
             return False
     return True
 
-def apply_cond(word, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
+def apply_cond(word, **kwargs):
+    exact_len = kwargs.get('exact_len')
+    min_len = kwargs.get('min_len', 1)
+    max_len = kwargs.get('max_len', 100)
+    fixed = kwargs.get('fixed')
+    in_dict = kwargs.get('in_dict', False)
+    
     if exact_len:
         min_len = exact_len
         max_len = exact_len
@@ -63,14 +69,14 @@ def apply_cond(word, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict
         and (not fixed or check_chars(word, fixed)) \
         and (not in_dict or word in cw_dict)
 
-def synonyms(bank, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
+def synonyms(bank, **kwargs):
     if isinstance(bank, list):
         bank = ' '.join(bank)
     preds, preds_scores = models.answer_clues(dpr, [bank], 999999999, output_strings=True)
     preds, preds_scores = preds[0], list(preds_scores[0])
     preds = [clean_string(p) for p in preds]
-    new_preds = [p for p in preds if apply_cond(p, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict)]
-    new_preds_scores = [preds_scores[i] for i, p in enumerate(preds) if apply_cond(p, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict)]
+    new_preds = [p for p in preds if apply_cond(p, **kwargs)]
+    new_preds_scores = [preds_scores[i] for i, p in enumerate(preds) if apply_cond(p, **kwargs)]
     preds = new_preds
     preds_scores = new_preds_scores
     preds_map = {}
@@ -98,13 +104,18 @@ class Operator:
                 for b, b_s in self.all_banks(i + 1):
                     yield ([w] + b, w_s * b_s)
     
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
+    def eval(self, **kwargs):
+        if 'exact_len' in kwargs:
+            kwargs['max_len'] = kwargs['exact_len']
+            del kwargs['exact_len']
+        if 'in_dict' in kwargs:
+            del kwargs['in_dict']
         new_bank = []
         for b in self.bank:
             if isinstance(b, dict):
                 new_bank.append(b)
             else:
-                new_bank.append(b.eval(exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict)) # TODO: fix this
+                new_bank.append(b.eval(**kwargs))
         self.bank = new_bank
         return {}
 
@@ -112,77 +123,99 @@ class Alternation(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval()
+    def eval(self, **kwargs):
+        super().eval() # alternation removes letters
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
             for i in range(len(merged)):
                 cur = merged[i]
                 for j in range(i + 2, len(merged), 2):
                     cur += merged[j]
-                    if apply_cond(cur, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
+                    if apply_cond(cur, **kwargs):
                         if not cur in self.options:
                             self.options[cur] = 0
                         self.options[cur] += b_s
+                    prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Anagram(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval(max_len=max_len)
+    def eval(self, **kwargs):
+        super().eval(**kwargs)
         self.options = {}
+        prev_sum = 0
+        in_dict = kwargs.get('in_dict', False)
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
-            if len(merged) > max_len or len(merged) < min_len:
-                continue
-            for perm in itertools.permutations(merged):
-                cur = ''.join(perm)
-                if apply_cond(cur, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
-                    if not cur in self.options:
-                        self.options[cur] = 0
-                    self.options[cur] += b_s
+            if not in_dict:
+                for perm in itertools.permutations(merged):
+                    cur = ''.join(perm)
+                    if apply_cond(cur, **kwargs):
+                        if not cur in self.options:
+                            self.options[cur] = 0
+                        self.options[cur] = b_s # we don't count a1a2 and a2a1 as distinct
+                    prev_sum += b_s
+            else:
+                for word in cw_dict:
+                    if len(word) == len(merged) and sorted(word) == sorted(merged) and apply_cond(word, **kwargs):
+                        if not word in self.options:
+                            self.options[word] = 0
+                        self.options[word] = b_s # we don't count a1a2 and a2a1 as distinct
+                    prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Concatenation(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval(max_len=max_len)
+    def eval(self, **kwargs):
+        super().eval(**kwargs)
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
-            if len(merged) > max_len:
-                continue
-            if not merged in self.options:
-                self.options[merged] = 0
-            self.options[merged] += b_s
+            if apply_cond(merged, **kwargs):
+                if not merged in self.options:
+                    self.options[merged] = 0
+                self.options[merged] += b_s
+            prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Container(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval(max_len=max_len)
+    def eval(self, **kwargs):
+        super().eval(**kwargs)
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             assert len(b) == 2 # for now
-            for i in range(len(b[0]) + 1):
-                cur = b[0][:i] + b[1] + b[0][i:]
-                if apply_cond(cur, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
-                    if not cur in self.options:
-                        self.options[cur] = 0
-                    self.options[cur] += b_s
-            for i in range(len(b[1]) + 1):
-                cur = b[1][:i] + b[0] + b[1][i:]
-                if apply_cond(cur, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
-                    if not cur in self.options:
-                        self.options[cur] = 0
-                    self.options[cur] += b_s
+            for _ in range(2):
+                for i in range(len(b[0]) + 1):
+                    cur = b[0][:i] + b[1] + b[0][i:]
+                    if apply_cond(cur, **kwargs):
+                        if not cur in self.options:
+                            self.options[cur] = 0
+                        self.options[cur] += b_s
+                    prev_sum += b_s
+                b = [b[1], b[0]]
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 # not really sure if this is distinct to other ops..
@@ -200,48 +233,63 @@ class Hidden(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval()
+    def eval(self, **kwargs):
+        super().eval() # hidden removes letters
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
             for i in range(len(merged)):
                 for j in range(i + 1, len(merged)): # need to enforce using all words
                     cur = merged[i:j]
-                    if apply_cond(cur, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
+                    if apply_cond(cur, **kwargs):
                         if not cur in self.options:
                             self.options[cur] = 0
                         self.options[cur] += b_s
+                    prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Initialism(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval()
+    def eval(self, **kwargs):
+        super().eval() # initialism removes letters
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join([b_[0] for b_ in b]))
-            if apply_cond(merged, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
+            if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
+            prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Terminalism(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval()
+    def eval(self, **kwargs):
+        super().eval() # terminalism removes letters
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join([b_[-1] for b_ in b]))
-            if apply_cond(merged, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
+            if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
+            prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Homophone(Operator):
@@ -267,50 +315,70 @@ class Reversal(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval(max_len=max_len)
+    def eval(self, **kwargs):
+        super().eval(**kwargs)
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))[::-1]
-            if apply_cond(merged, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
+            if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
+            prev_sum += b_s
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Substitution(Operator):
     def __init__(self, bank):
         super().__init__(bank)
         
-    def eval(self, exact_len=None, min_len=1, max_len=100, fixed=None, in_dict=False):
-        super().eval()
+    def eval(self, **kwargs):
+        super().eval() # substitution removes letters
         self.options = {}
+        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = ' '.join(b)
-            syns = synonyms(merged, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict)
+            syns = synonyms(merged, **kwargs)
             for syn, syn_s in syns.items():
                 # syn = clean_string(syn) # should already be clean
-                if apply_cond(syn, exact_len=exact_len, min_len=min_len, max_len=max_len, fixed=fixed, in_dict=in_dict):
+                if apply_cond(syn, **kwargs):
                     if not syn in self.options:
                         self.options[syn] = 0
                     self.options[syn] += b_s * syn_s
+                prev_sum += b_s * syn_s
         self.options = sorted(self.options.items(), key=lambda x: -x[1])
         self.options = self.options[:1000] # for now
         self.options = {o[0]: o[1] for o in self.options}
+        # cur_sum = sum(self.options.values())
+        # for x in self.options:
+        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Definition:
     def __init__(self, defn):
         self.defn = defn
     
-    def eval(self, exact_len=None, max_len=100):
-        if exact_len:
-            max_len = exact_len
-        return synonyms(self.defn, max_len=max_len)
+    def eval(self, **kwargs):
+        return synonyms(self.defn, **kwargs)
 
 def eval(part1, part2, ans):
-    term1 = part1.eval(exact_len=len(ans)).get(ans, 0)
-    term2 = part2.eval(exact_len=len(ans)).get(ans, 0)
+    tmp = {}
+    for c in ans:
+        tmp[c] = 1
+    fixed = [tmp] * len(ans)
+    dict1 = part1.eval(exact_len=len(ans), fixed=fixed, in_dict=True)
+    dict2 = part2.eval(exact_len=len(ans), fixed=fixed, in_dict=True)
+    sum1 = sum(dict1.values())
+    for k in dict1:
+        dict1[k] /= sum1
+    sum2 = sum(dict2.values())
+    for k in dict2:
+        dict2[k] /= sum2
+    term1 = dict1.get(ans, 0)
+    term2 = dict2.get(ans, 0)
     print(term1, "*", term2, "=", term1 * term2)
     return term1 * term2
 
@@ -345,7 +413,7 @@ print("eval([Substitution(\"Speak\") [about], Substitution(\"idiot\")]), Definit
     eval(Container([Substitution("Speak"), Substitution("idiot")]), Definition("sense"), "sanity"))
 # A bit of god-awful back trouble (3)
 # [A bit of] Reversal([Hidden("god-awful")]) [back], Definition("trouble"), "ado"
-print("eval([Hidden(\"god-awful\")]), Definition(\"trouble\"), \"ado\") = ",
+print("eval(Reversal([Hidden(\"god-awful\")]), Definition(\"trouble\"), \"ado\") = ",
     eval(Reversal([Hidden("god-awful")]), Definition("trouble"), "ado"))
 # Quangos siphoned a certain amount off, creating scandal (6)
 # Hidden("Quangos siphoned") [a certain amount off], Definition("creating scandal"), "gossip"
