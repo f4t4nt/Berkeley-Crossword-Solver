@@ -32,9 +32,6 @@ import random
 import re
 import itertools
 
-dpr = models.setup_closedbook(0)
-cw_dict = load.load_words(only_ans=True)
-
 def clean_string(s, remove_spaces=True):
     s = re.sub(r'[^a-zA-Z0-9\s]', '', s)
     s = s.lower()
@@ -42,12 +39,63 @@ def clean_string(s, remove_spaces=True):
         s = re.sub(r'\s+', '', s)
     return s
 
-def check_chars(word, fixed):
-    assert fixed is not None
+def check_chars(word, fixed, fixed_len=False):
+    if fixed_len and len(word) != len(fixed):
+        return False
     for i, c in enumerate(word):
+        if i >= len(fixed):
+            return False # just for now
         if not c in fixed[i]:
             return False
     return True
+
+def valid_cut(cut, bank):
+    for i in range(len(bank)):
+        if isinstance(bank[i], str) and not check_chars(bank[i], cut[i], fixed_len=True):
+            return False
+    return True
+
+def merge_cuts(cuts, size, cnt, bank):
+    rv = [[dict() for _ in range(size)] for _ in range(cnt)]
+    for cut in cuts:
+        if not valid_cut(cut, bank):
+            continue
+        for i, c in enumerate(cut):
+            for j, chars in enumerate(c):
+                for k, v in chars.items():
+                    if k in rv[i][j]:
+                        rv[i][j][k] = v # constant probability for now
+                    else:
+                        rv[i][j][k] = v
+    return rv
+
+def get_cuts(base, cnt):
+    if cnt == 1:
+        return [[base]]
+    else:
+        cuts = []
+        for i in range(len(base) - cnt + 1):
+            for p in get_cuts(base[i + 1:], cnt - 1):
+                cuts.append([base[:i + 1]] + p)
+        return cuts
+
+# cuts = get_cuts([{'j': 1}, {'o': 1}, {'r': 1}, {'d': 1}, {'a': 1}, {'n': 1}], 3)
+# # print(cuts)
+# merged = merge_cuts(cuts, 'jordan', 3, [1, 2, 3])
+# for d in merged:
+#     print(d)
+
+# # slicedapplebreadcrust
+# #                 board
+# # cuts = get_cuts([{'s': 1}, {'l': 1}, {'i': 1}, {'c': 1}, {'e': 1}, {'d': 1}, {'a': 1}, {'p': 1}, {'p': 1}, {'l': 1}, {'e': 1}, {'b': 1}, {'r': 1}, {'e': 1}, {'a': 1}, {'d': 1}, {'c': 1, 'b': 1}, {'r': 1, 'o': 1}, {'u': 1, 'a': 1}, {'s': 1, 'r': 1}, {'t': 1, 'd': 1}], 4)
+# cuts = get_cuts([{'s': 1}, {'l': 1}, {'i': 1}, {'c': 1}, {'e': 1}, {'d': 1}, {'a': 1}, {'p': 1}, {'p': 1}, {'l': 1}, {'e': 1}, {'b': 1}, {'r': 1}, {'e': 1}, {'a': 1}, {'d': 1}, {'c': 1, 'b': 1}, {'r': 1, 'o': 1}, {'u': 1, 'a': 1}, {'s': 1, 'r': 1}, {'t': 1}], 4)
+# # print(cuts)
+# merged = merge_cuts(cuts, len('slicedapplebreadcrust'), 4, [1, 'apple', 3, 4])
+# for d in merged:
+#     print(d)
+
+dpr = models.setup_closedbook(0)
+cw_dict = load.load_words(only_ans=True)
 
 def apply_cond(word, **kwargs):
     exact_len = kwargs.get('exact_len')
@@ -59,11 +107,6 @@ def apply_cond(word, **kwargs):
     if exact_len:
         min_len = exact_len
         max_len = exact_len
-    if not fixed:
-        tmp = {}
-        for c in 'abcdefghijklmnopqrstuvwxyz':
-            tmp[c] = 1
-        fixed = [tmp] * max_len
     return len(word) >= min_len \
         and len(word) <= max_len \
         and (not fixed or check_chars(word, fixed)) \
@@ -72,11 +115,13 @@ def apply_cond(word, **kwargs):
 def synonyms(bank, **kwargs):
     if isinstance(bank, list):
         bank = ' '.join(bank)
-    preds, preds_scores = models.answer_clues(dpr, [bank], 999999999, output_strings=True)
+    preds, preds_scores = models.answer_clues(dpr, [bank], 2000, output_strings=True)
     preds, preds_scores = preds[0], list(preds_scores[0])
+    ### Optimize
     preds = [clean_string(p) for p in preds]
     new_preds = [p for p in preds if apply_cond(p, **kwargs)]
     new_preds_scores = [preds_scores[i] for i, p in enumerate(preds) if apply_cond(p, **kwargs)]
+    ###
     preds = new_preds
     preds_scores = new_preds_scores
     preds_map = {}
@@ -95,6 +140,8 @@ class Operator:
         else:                       # list of Words and Operators, no change necessary
             pass
         self.bank = bank
+        self.eval_factor = False
+        self.factor = 0 # should never be 0
         
     def all_banks(self, i=0):
         if i >= len(self.bank):
@@ -104,29 +151,67 @@ class Operator:
                 for b, b_s in self.all_banks(i + 1):
                     yield ([w] + b, w_s * b_s)
     
+    def net_factor(self):
+        if not self.eval_factor:
+            for b in self.bank:
+                if isinstance(b, Operator):
+                    self.factor *= b.net_factor()
+            self.eval_factor = True
+        return self.factor
+    
     def eval(self, **kwargs):
         if 'exact_len' in kwargs:
             kwargs['max_len'] = kwargs['exact_len']
             del kwargs['exact_len']
         if 'in_dict' in kwargs:
             del kwargs['in_dict']
-        new_bank = []
-        for b in self.bank:
-            if isinstance(b, dict):
-                new_bank.append(b)
-            else:
-                new_bank.append(b.eval(**kwargs))
-        self.bank = new_bank
+            
+        # new_bank = []
+        # for b in self.bank:
+        #     if isinstance(b, dict):
+        #         new_bank.append(b)
+        #     else:
+        #         new_bank.append(b.eval(**kwargs))
+        
+        if 'fixed' in kwargs: # janky for now, need to collapse to one statement
+            fixed = kwargs.get('fixed')
+            cuts = get_cuts(fixed, len(self.bank))
+            merged = merge_cuts(cuts, len(fixed), len(self.bank), self.bank)
+            
+            self.net_factor()
+            new_bank = self.bank
+            branch = []
+            for i, b in enumerate(self.bank):
+                if isinstance(b, Operator):
+                    branch.append([i, b.factor])
+            branch.sort(key=lambda x: x[1])
+            branch = [b[0] for b in branch]
+            for i in branch:
+                copy_args = deepcopy(kwargs)
+                copy_args['fixed'] = merged[i]
+                new_bank[i] = new_bank[i].eval(**copy_args)
+        else:
+            self.net_factor()
+            new_bank = self.bank
+            branch = []
+            for i, b in enumerate(self.bank):
+                if isinstance(b, Operator):
+                    branch.append([i, b.factor])
+            branch.sort(key=lambda x: x[1])
+            branch = [b[0] for b in branch]
+            for i in branch:
+                new_bank[i] = new_bank[i].eval(**kwargs)
+                
         return {}
 
 class Alternation(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 100 # O(n^2)
         
     def eval(self, **kwargs):
         super().eval() # alternation removes letters
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
             for i in range(len(merged)):
@@ -137,20 +222,16 @@ class Alternation(Operator):
                         if not cur in self.options:
                             self.options[cur] = 0
                         self.options[cur] += b_s
-                    prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Anagram(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 1000 # O(n!)
         
     def eval(self, **kwargs):
         super().eval(**kwargs)
         self.options = {}
-        prev_sum = 0
         in_dict = kwargs.get('in_dict', False)
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
@@ -161,47 +242,38 @@ class Anagram(Operator):
                         if not cur in self.options:
                             self.options[cur] = 0
                         self.options[cur] = b_s # we don't count a1a2 and a2a1 as distinct
-                    prev_sum += b_s
             else:
                 for word in cw_dict:
                     if len(word) == len(merged) and sorted(word) == sorted(merged) and apply_cond(word, **kwargs):
                         if not word in self.options:
                             self.options[word] = 0
                         self.options[word] = b_s # we don't count a1a2 and a2a1 as distinct
-                    prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Concatenation(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 1 # O(1)
         
     def eval(self, **kwargs):
         super().eval(**kwargs)
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
             if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
-            prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Container(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 10 # O(n)
         
     def eval(self, **kwargs):
-        super().eval(**kwargs)
+        super().eval() # for now just to avoid trying to fix any characters
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             assert len(b) == 2 # for now
             for _ in range(2):
@@ -211,11 +283,7 @@ class Container(Operator):
                         if not cur in self.options:
                             self.options[cur] = 0
                         self.options[cur] += b_s
-                    prev_sum += b_s
                 b = [b[1], b[0]]
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 # not really sure if this is distinct to other ops..
@@ -232,11 +300,11 @@ class Deletion(Operator):
 class Hidden(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 100 # O(n^2)
         
     def eval(self, **kwargs):
         super().eval() # hidden removes letters
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))
             for i in range(len(merged)):
@@ -246,50 +314,38 @@ class Hidden(Operator):
                         if not cur in self.options:
                             self.options[cur] = 0
                         self.options[cur] += b_s
-                    prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Initialism(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 1 # O(1)
         
     def eval(self, **kwargs):
         super().eval() # initialism removes letters
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join([b_[0] for b_ in b]))
             if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
-            prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Terminalism(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 1 # O(1)
         
     def eval(self, **kwargs):
         super().eval() # terminalism removes letters
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join([b_[-1] for b_ in b]))
             if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
-            prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
     
 class Homophone(Operator):
@@ -314,31 +370,27 @@ class Insertion(Operator):
 class Reversal(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 1 # O(1)
         
     def eval(self, **kwargs):
         super().eval(**kwargs)
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = clean_string(''.join(b))[::-1]
             if apply_cond(merged, **kwargs):
                 if not merged in self.options:
                     self.options[merged] = 0
                 self.options[merged] += b_s
-            prev_sum += b_s
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Substitution(Operator):
     def __init__(self, bank):
         super().__init__(bank)
+        self.factor = 500 # >O(n^2) <O(n!)
         
     def eval(self, **kwargs):
         super().eval() # substitution removes letters
         self.options = {}
-        prev_sum = 0
         for b, b_s in self.all_banks():
             merged = ' '.join(b)
             syns = synonyms(merged, **kwargs)
@@ -348,13 +400,9 @@ class Substitution(Operator):
                     if not syn in self.options:
                         self.options[syn] = 0
                     self.options[syn] += b_s * syn_s
-                prev_sum += b_s * syn_s
         self.options = sorted(self.options.items(), key=lambda x: -x[1])
-        self.options = self.options[:1000] # for now
+        self.options = self.options[:2000] # for now
         self.options = {o[0]: o[1] for o in self.options}
-        # cur_sum = sum(self.options.values())
-        # for x in self.options:
-        #     self.options[x] *= prev_sum / cur_sum
         return self.options
 
 class Definition:
@@ -364,23 +412,35 @@ class Definition:
     def eval(self, **kwargs):
         return synonyms(self.defn, **kwargs)
 
+def normalize_dict(d):
+    s = sum(d.values())
+    for k in d:
+        d[k] /= s
+    return d
+
 def eval(part1, part2, ans):
-    tmp = {}
-    for c in ans:
-        tmp[c] = 1
-    fixed = [tmp] * len(ans)
+    full = {}
+    for c in "abcdefghijklmnopqrstuvwxyz":
+        full[c] = 1
+    fixed = [full] * len(ans)
+    fixed[2] = {ans[2]: 1}
+    
+    # tmp = {}
+    # for c in ans:
+    #     tmp[c] = 1
+    # fixed = [tmp] * len(ans)
+    # # fixed = [{ans[i]: 1} for i in range(len(ans))]
     dict1 = part1.eval(exact_len=len(ans), fixed=fixed, in_dict=True)
     dict2 = part2.eval(exact_len=len(ans), fixed=fixed, in_dict=True)
-    sum1 = sum(dict1.values())
-    for k in dict1:
-        dict1[k] /= sum1
-    sum2 = sum(dict2.values())
-    for k in dict2:
-        dict2[k] /= sum2
+    dict1 = normalize_dict(dict1)
+    dict2 = normalize_dict(dict2)
     term1 = dict1.get(ans, 0)
     term2 = dict2.get(ans, 0)
     print(term1, "*", term2, "=", term1 * term2)
     return term1 * term2
+
+print("eval(Definition(\"Country\"), Concatenation([Substitution(\"left\"), Alternation(\"judgeable\")]), \"portugal\") = ",
+    eval(Definition("Country"), Concatenation([Substitution("left"), Alternation("judgeable")]), "portugal"))
 
 # Concatenation([Substitution("A long arduous journey, especially one made on foot."), Substitution("chess piece")]), Definition("Walking"), "trekking"
 print("eval(Concatenation([Substitution(\"A long arduous journey, especially one made on foot.\"), Substitution(\"chess piece\")]), Definition(\"Walking\"), \"trekking\") = ",
